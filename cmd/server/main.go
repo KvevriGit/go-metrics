@@ -1,7 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"github.com/KvevriGit/go-metrics/cmd/server/internal"
+	"github.com/go-chi/chi/v5"
+	"html/template"
 	"net/http"
 )
 
@@ -15,7 +18,7 @@ func ErrorComp(err error) func(err2 error) bool {
 	}
 }
 
-func mainHandler(res http.ResponseWriter, req *http.Request) {
+func saveMetricHandler(res http.ResponseWriter, req *http.Request) {
 	body := ""
 	err := GlobalStorage.SaveMetric(req.URL.Path)
 	ThatError := ErrorComp(err)
@@ -30,13 +33,36 @@ func mainHandler(res http.ResponseWriter, req *http.Request) {
 		res.WriteHeader(http.StatusBadRequest)
 	}
 	res.Write([]byte(body))
+}
 
+func listAllMetricsHandler(res http.ResponseWriter, req *http.Request) {
+	templateHTML, _ := template.New("data").Parse("<body>{{range $index, $element :=.Values}}<h1>{{$index}} = {{$element}}</h1>{{end}}</body>")
+	templateHTML.Execute(res, GlobalStorage)
+}
+
+func getSpecificMetricHandler(res http.ResponseWriter, req *http.Request) {
+	//typeV := chi.URLParam(req, "type")
+	nameV := chi.URLParam(req, "name")
+
+	res.Header().Set("Content-Type", "text/plain")
+	if valueM, ok := GlobalStorage.Values[nameV]; ok {
+		res.WriteHeader(http.StatusOK)
+		res.Write([]byte(fmt.Sprintf("%f", valueM)))
+
+	} else {
+		res.WriteHeader(http.StatusNotFound)
+	}
 }
 
 func main() {
-	mux := http.NewServeMux()
-	mux.HandleFunc(`/`, mainHandler)
-	err := http.ListenAndServe(`:8080`, mux)
+	r := chi.NewRouter()
+	r.Route("/", func(r chi.Router) {
+		r.Get("/value/{type}/{name}", getSpecificMetricHandler)
+		r.Get("/", listAllMetricsHandler)
+		//r.Post("/update", saveMetricHandler)
+	})
+	r.NotFound(saveMetricHandler)
+	err := http.ListenAndServe(`:8080`, r)
 	if err != nil {
 		panic(err)
 	}

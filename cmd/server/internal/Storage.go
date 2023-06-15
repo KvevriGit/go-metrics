@@ -58,8 +58,8 @@ func canParse(s string, v *float64) bool {
 }
 
 func (s MemStorage) SaveMetric(URL string) error {
-	URL = TrimF(URL, "/update/", "/")
-	c := strings.Split(URL, "/")
+	trimmedURL := TrimF(URL, "/update/", "/")
+	c := strings.Split(trimmedURL, "/")
 	lnF := Length(c)
 	len1 := lnF(1)
 	len2 := lnF(2)
@@ -68,7 +68,7 @@ func (s MemStorage) SaveMetric(URL string) error {
 	var v float64
 	switch true {
 	case len3 && typeIsKnown && canParse(c[2], &v):
-		println(v)
+		s.Values[c[1]], _ = strconv.ParseFloat(c[2], 64)
 		return nil
 	case len3 && typeIsKnown:
 		return ErrMap[400]
