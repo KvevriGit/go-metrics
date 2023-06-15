@@ -2,11 +2,20 @@ package main
 
 import (
 	"errors"
+	"flag"
 	"fmt"
+	"github.com/caarlos0/env"
+	"log"
 	"net/http"
 	"reflect"
 	"runtime"
 	"strconv"
+)
+
+var (
+	addrFlag       = flag.String("a", "http://localhost:8080", "address of server with port")
+	reportInterval = flag.Int("r", 10, "report interval")
+	pollInterval   = flag.Int("p", 2, "poll interval")
 )
 
 func allocate() {
@@ -36,6 +45,12 @@ var tributes []string = []string{"Alloc",
 	"NextGC", "NumForcedGC", "NumGC", "OtherSys",
 	"PauseTotalNs", "StackInuse", "StackSys", "Sys", "TotalAlloc"}
 
+type EnvConfig struct {
+	address         string `env:"ADDRESS"`
+	report_interval int    `env:"REPORT_INTERVAL"`
+	poll_interval   int    `env:"POLL_INTERVAL"`
+}
+
 type Poll struct {
 	PollCount      int
 	pollInterval   int    `default0:"2"`
@@ -62,13 +77,20 @@ func readStats() *runtime.MemStats {
 }
 
 func SendTribute(t string, n string, v string) {
-	srv := "http://localhost:8080"
+	srv := addrFlag
 	req, _ := http.NewRequest("POST", fmt.Sprintf("%s/update/%s/%s/%s", srv, t, n, v), nil)
 	req.Header.Set("Content-Type", "text/plain")
 	http.DefaultClient.Do(req)
 }
 
 func main() {
+	var cfg EnvConfig
+	err := env.Parse(&cfg)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	flag.Parse()
 	allocate()
 	stats := readStats()
 	for _, atTribute := range tributes {

@@ -3,14 +3,20 @@ package main
 import (
 	"fmt"
 	"github.com/KvevriGit/go-metrics/cmd/server/internal"
+	"github.com/caarlos0/env"
 	"github.com/go-chi/chi/v5"
 	"html/template"
+	"log"
 	"net/http"
 )
 
 // var GlobalStorage internal.MemStorage = internal.MemStorage{}
 
 var GlobalStorage internal.MemStorage = internal.MemStorage{Values: make(map[string]float64)}
+
+type EnvConfig struct {
+	address string `env:"ADDRESS"`
+}
 
 func ErrorComp(err error) func(err2 error) bool {
 	return func(err2 error) bool {
@@ -55,6 +61,12 @@ func getSpecificMetricHandler(res http.ResponseWriter, req *http.Request) {
 }
 
 func main() {
+	var cfg EnvConfig
+	err := env.Parse(&cfg)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	r := chi.NewRouter()
 	r.Route("/", func(r chi.Router) {
 		r.Get("/value/{type}/{name}", getSpecificMetricHandler)
@@ -62,7 +74,7 @@ func main() {
 		//r.Post("/update", saveMetricHandler)
 	})
 	r.NotFound(saveMetricHandler)
-	err := http.ListenAndServe(`:8080`, r)
+	err = http.ListenAndServe(`:8080`, r)
 	if err != nil {
 		panic(err)
 	}
