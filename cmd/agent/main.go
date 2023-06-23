@@ -1,15 +1,15 @@
 package main
 
 import (
-	"errors"
 	"flag"
 	"fmt"
+	"github.com/KvevriGit/go-metrics/cmd/agent/internal"
+	"github.com/KvevriGit/go-metrics/cmd/agent/internal/settings"
 	"github.com/caarlos0/env"
 	"log"
 	"net/http"
-	"reflect"
 	"runtime"
-	"strconv"
+	"time"
 )
 
 var (
@@ -18,25 +18,7 @@ var (
 	pollInterval   = flag.Int("p", 2, "poll interval")
 )
 
-func allocate() {
-	//  0.25MB
-	_ = make([]byte, int((1<<20)*0.25))
-}
-
-func getAttr(obj interface{}, fieldName string) reflect.Value {
-	pointToStruct := reflect.ValueOf(obj) // addressable
-	curStruct := pointToStruct.Elem()
-	if curStruct.Kind() != reflect.Struct {
-		panic("not struct")
-	}
-	curField := curStruct.FieldByName(fieldName) // type: reflect.Value
-	if !curField.IsValid() {
-		panic("not found:" + fieldName)
-	}
-	return curField
-}
-
-var tributes []string = []string{"Alloc",
+var metricsNames []string = []string{"Alloc",
 	"BuckHashSys", "Frees", "GCCPUFraction",
 	"GCSys", "HeapAlloc", "HeapIdle",
 	"HeapInuse", "HeapObjects", "HeapReleased",
@@ -45,57 +27,47 @@ var tributes []string = []string{"Alloc",
 	"NextGC", "NumForcedGC", "NumGC", "OtherSys",
 	"PauseTotalNs", "StackInuse", "StackSys", "Sys", "TotalAlloc"}
 
-type EnvConfig struct {
-	address         string `env:"ADDRESS"`
-	report_interval int    `env:"REPORT_INTERVAL"`
-	poll_interval   int    `env:"POLL_INTERVAL"`
+func readStats(s *runtime.MemStats) {
+	runtime.ReadMemStats(s)
 }
 
-type Poll struct {
-	PollCount      int
-	pollInterval   int    `default0:"2"`
-	reportInterval int    `default0:"10"`
-	RandomValue    uint64 // aka gauge
-}
-
-func unpkgValue(value reflect.Value) (string, string, error) {
-	switch value.Kind().String() {
-	case "float64":
-		return fmt.Sprintf("%f", value.Interface().(float64)), "gauge", nil
-	case "uint64":
-		return strconv.FormatUint(value.Interface().(uint64), 10), "counter", nil // https://go.dev/blog/laws-of-reflection
-	case "uint32":
-		return strconv.FormatUint(uint64(value.Interface().(uint32)), 10), "counter", nil // https://go.dev/blog/laws-of-reflection
-	}
-	return "", "", errors.New("unexpected value type") // что возвращать?
-}
-
-func readStats() *runtime.MemStats {
-	memstats := new(runtime.MemStats)
-	runtime.ReadMemStats(memstats)
-	return memstats
-}
-
-func SendTribute(t string, n string, v string) {
+func sendAttribute(attributeType string, name string, value string) {
 	srv := addrFlag
-	req, _ := http.NewRequest("POST", fmt.Sprintf("%s/update/%s/%s/%s", srv, t, n, v), nil)
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/update/%s/%s/%s", *srv, attributeType, name, value), nil)
+	if err != nil {
+		log.Fatal(err)
+	}
 	req.Header.Set("Content-Type", "text/plain")
 	http.DefaultClient.Do(req)
 }
 
 func main() {
-	var cfg EnvConfig
-	err := env.Parse(&cfg)
+	var Poll settings.Poll
+	var envConfig settings.EnvironmentConfig
+	err := env.Parse(&envConfig) //прочитать параметры окружения в структуру
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	flag.Parse()
-	allocate()
-	stats := readStats()
-	for _, atTribute := range tributes {
-		attrValue := getAttr(stats, atTribute)
-		v, t, _ := unpkgValue(attrValue)
-		SendTribute(t, atTribute, v)
+	flag.Parse() // прочитать все флаги
+
+	memoryStats := new(runtime.MemStats)
+	readStats(memoryStats) // read once
+	go func() {
+		for {
+			time.Sleep(time.Duration(*pollInterval) * time.Second)
+			readStats(memoryStats)
+			Poll.PollCount++
+			println("poll")
+		}
+	}()
+	for {
+		for _, metricName := range metricsNames {
+			reflectionValueOfStat := internal.GetMetricByName(memoryStats, metricName)
+			value, metricType, _ := internal.GetValueAndTypeFromReflection(reflectionValueOfStat)
+			sendAttribute(metricType, metricName, value)
+		}
+		time.Sleep(time.Duration(*reportInterval) * time.Second)
+		println("report")
 	}
 }

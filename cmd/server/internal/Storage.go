@@ -10,20 +10,24 @@ type MemStorage struct {
 	Values map[string]float64
 }
 
-func Length(c []string) func(min int) bool {
+func InitStorage() MemStorage {
+	return MemStorage{Values: make(map[string]float64)}
+}
+
+func length(c []string) func(min int) bool {
 	l := len(c)
 	return func(min int) bool {
 		return l >= min
 	}
 }
 
-func TrimF(s string, prefix string, end string) (purified string) {
+func trim(s string, prefix string, end string) (purified string) {
 	s = strings.TrimPrefix(s, prefix)
 	purified = strings.TrimRight(s, end)
 	return
 }
 
-func ContainsF(carr []string) func(t string) bool {
+func contains(carr []string) func(t string) bool {
 	return func(t string) bool {
 		for _, v := range carr {
 			if v == t {
@@ -46,7 +50,7 @@ var ErrMap = map[int]error{
 
 var KnownTypes = []string{"counter", "gauge"}
 
-var HasKnownTypes = ContainsF(KnownTypes)
+var IsItKnownType = contains(KnownTypes)
 
 func canParse(s string, v *float64) bool {
 	var err error
@@ -57,27 +61,30 @@ func canParse(s string, v *float64) bool {
 	return false
 }
 
-func (s MemStorage) SaveMetric(URL string) error {
-	trimmedURL := TrimF(URL, "/update/", "/")
-	c := strings.Split(trimmedURL, "/")
-	lnF := Length(c)
-	len1 := lnF(1)
-	len2 := lnF(2)
-	len3 := lnF(3)
-	typeIsKnown := HasKnownTypes(c[0])
-	var v float64
+func ProcessURL(URL string) (value float64, name string, err error) {
+	trimmedURL := trim(URL, "/update/", "/")
+	dividedURL := strings.Split(trimmedURL, "/")
+	isUrlLengthMoreOrEqual := length(dividedURL)
+	LenMoreOrEqual1 := isUrlLengthMoreOrEqual(1)
+	LenMoreOrEqual2 := isUrlLengthMoreOrEqual(2)
+	LenMoreOrEqual3 := isUrlLengthMoreOrEqual(3)
+	typeIsKnown := IsItKnownType(dividedURL[0])
 	switch true {
-	case len3 && typeIsKnown && canParse(c[2], &v):
-		s.Values[c[1]], _ = strconv.ParseFloat(c[2], 64)
-		return nil
-	case len3 && typeIsKnown:
-		return ErrMap[400]
-	case len2 && typeIsKnown:
-		return ErrMap[404]
-	case len2 && c[0] != "":
-		return ErrMap[501]
-	case len1:
-		return ErrMap[404]
+	case LenMoreOrEqual3 && typeIsKnown && canParse(dividedURL[2], &value):
+		return value, dividedURL[1], nil
+	case LenMoreOrEqual3 && typeIsKnown:
+		return value, dividedURL[1], ErrMap[400]
+	case LenMoreOrEqual2 && typeIsKnown:
+		return value, dividedURL[1], ErrMap[404]
+	case LenMoreOrEqual2 && dividedURL[0] != "":
+		return value, dividedURL[1], ErrMap[501]
+	case LenMoreOrEqual1:
+		return value, name, ErrMap[404]
 	}
+	return value, name, nil
+}
+
+func (s MemStorage) SaveMetric(value float64, name string) error {
+	s.Values[name] = value
 	return nil
 }

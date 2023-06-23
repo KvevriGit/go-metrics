@@ -2,43 +2,48 @@ package main
 
 import (
 	"fmt"
-	"github.com/KvevriGit/go-metrics/cmd/server/internal"
+	"log"
+	"net/http"
+
 	"github.com/caarlos0/env"
 	"github.com/go-chi/chi/v5"
 	"html/template"
-	"log"
-	"net/http"
+
+	"github.com/KvevriGit/go-metrics/cmd/server/internal"
 )
 
-// var GlobalStorage internal.MemStorage = internal.MemStorage{}
-
-var GlobalStorage internal.MemStorage = internal.MemStorage{Values: make(map[string]float64)}
+var GlobalStorage internal.MemStorage = internal.InitStorage()
 
 type EnvConfig struct {
 	address string `env:"ADDRESS"`
 }
 
-func ErrorComp(err error) func(err2 error) bool {
+func compareErrors(err error) func(err2 error) bool {
 	return func(err2 error) bool {
 		return err.Error() == err2.Error()
 	}
 }
 
 func saveMetricHandler(res http.ResponseWriter, req *http.Request) {
-	body := ""
-	err := GlobalStorage.SaveMetric(req.URL.Path)
-	ThatError := ErrorComp(err)
-	switch true {
-	case err == nil:
+	var body string
+	defer res.Write([]byte(body))
+	value, name, urlError := internal.ProcessURL(req.URL.Path)
+	//GlobalStorage.SaveMetric(req.URL.Path)
+	IsUrlErrorEqual := compareErrors(urlError)
+	if urlError == nil {
+		GlobalStorage.SaveMetric(value, name)
 		res.WriteHeader(http.StatusOK)
-	case ThatError(internal.ErrMap[404]):
-		res.WriteHeader(http.StatusNotFound)
-	case ThatError(internal.ErrMap[501]):
-		res.WriteHeader(http.StatusNotImplemented)
-	case ThatError(internal.ErrMap[400]):
-		res.WriteHeader(http.StatusBadRequest)
+	} else {
+		switch true {
+		case IsUrlErrorEqual(internal.ErrMap[404]):
+			res.WriteHeader(http.StatusNotFound)
+		case IsUrlErrorEqual(internal.ErrMap[501]):
+			res.WriteHeader(http.StatusNotImplemented)
+		case IsUrlErrorEqual(internal.ErrMap[400]):
+			res.WriteHeader(http.StatusBadRequest)
+		}
 	}
-	res.Write([]byte(body))
+
 }
 
 func listAllMetricsHandler(res http.ResponseWriter, req *http.Request) {
@@ -47,9 +52,7 @@ func listAllMetricsHandler(res http.ResponseWriter, req *http.Request) {
 }
 
 func getSpecificMetricHandler(res http.ResponseWriter, req *http.Request) {
-	//typeV := chi.URLParam(req, "type")
 	nameV := chi.URLParam(req, "name")
-
 	res.Header().Set("Content-Type", "text/plain")
 	if valueM, ok := GlobalStorage.Values[nameV]; ok {
 		res.WriteHeader(http.StatusOK)
